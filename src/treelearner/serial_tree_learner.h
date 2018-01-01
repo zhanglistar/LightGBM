@@ -146,8 +146,8 @@ protected:
   std::vector<std::unique_ptr<OrderedBin>> ordered_bins_;
   /*! \brief True if has ordered bin */
   bool has_ordered_bin_ = false;
-  /*! \brief  is_data_in_leaf_[i] != 0 means i-th data is marked */
-  std::vector<char> is_data_in_leaf_;
+  /*! \brief Indices mapper for ordered bin */
+  std::vector<data_size_t> indices_mapper_for_ordered_bin_;
   /*! \brief used to cache historical histogram to speed up*/
   HistogramPool histogram_pool_;
   /*! \brief config of tree learner*/

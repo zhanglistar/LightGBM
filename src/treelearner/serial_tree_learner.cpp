@@ -13,6 +13,7 @@ std::chrono::duration<double, std::milli> init_split_time;
 std::chrono::duration<double, std::milli> hist_time;
 std::chrono::duration<double, std::milli> find_split_time;
 std::chrono::duration<double, std::milli> split_time;
+std::chrono::duration<double, std::milli> ordered_bin_init_time;
 std::chrono::duration<double, std::milli> ordered_bin_time;
 #endif // TIMETAG
 
@@ -33,6 +34,7 @@ SerialTreeLearner::~SerialTreeLearner() {
   Log::Info("SerialTreeLearner::hist_build costs %f", hist_time * 1e-3);
   Log::Info("SerialTreeLearner::find_split costs %f", find_split_time * 1e-3);
   Log::Info("SerialTreeLearner::split costs %f", split_time * 1e-3);
+  Log::Info("SerialTreeLearner::ordered_bin_init costs %f", ordered_bin_init_time * 1e-3);
   Log::Info("SerialTreeLearner::ordered_bin costs %f", ordered_bin_time * 1e-3);
   #endif
 }
@@ -84,8 +86,7 @@ void SerialTreeLearner::Init(const Dataset* train_data, bool is_constant_hessian
   ordered_hessians_.resize(num_data_);
   // if has ordered bin, need to allocate a buffer to fast split
   if (has_ordered_bin_) {
-    is_data_in_leaf_.resize(num_data_);
-    std::fill(is_data_in_leaf_.begin(), is_data_in_leaf_.end(), static_cast<char>(0));
+    indices_mapper_for_ordered_bin_.resize(num_data_);
     ordered_bin_indices_.clear();
     for (int i = 0; i < static_cast<int>(ordered_bins_.size()); i++) {
       if (ordered_bins_[i] != nullptr) {
@@ -116,8 +117,7 @@ void SerialTreeLearner::ResetTrainingData(const Dataset* train_data) {
   ordered_hessians_.resize(num_data_);
   // if has ordered bin, need to allocate a buffer to fast split
   if (has_ordered_bin_) {
-    is_data_in_leaf_.resize(num_data_);
-    std::fill(is_data_in_leaf_.begin(), is_data_in_leaf_.end(), static_cast<char>(0));
+    indices_mapper_for_ordered_bin_.resize(num_data_);
   }
 }
 
@@ -306,22 +306,23 @@ void SerialTreeLearner::BeforeTrain() {
       data_size_t begin = data_partition_->leaf_begin(0);
       data_size_t end = begin + data_partition_->leaf_count(0);
       data_size_t loop_size = end - begin;
+      std::vector<char> is_index_used(num_data_);
       #pragma omp parallel for schedule(static, 512) if(loop_size >= 1024)
       for (data_size_t i = begin; i < end; ++i) {
-        is_data_in_leaf_[indices[i]] = 1;
+        is_index_used[indices[i]] = 1;
       }
       OMP_INIT_EX();
       // initialize ordered bin
       #pragma omp parallel for schedule(static)
       for (int i = 0; i < static_cast<int>(ordered_bin_indices_.size()); ++i) {
         OMP_LOOP_EX_BEGIN();
-        ordered_bins_[ordered_bin_indices_[i]]->Init(is_data_in_leaf_.data(), tree_config_->num_leaves);
+        ordered_bins_[ordered_bin_indices_[i]]->Init(is_index_used.data(), tree_config_->num_leaves);
         OMP_LOOP_EX_END();
       }
       OMP_THROW_EX();
       #pragma omp parallel for schedule(static, 512) if(loop_size >= 1024)
       for (data_size_t i = begin; i < end; ++i) {
-        is_data_in_leaf_[indices[i]] = 0;
+        indices_mapper_for_ordered_bin_[indices[i]] = 0;
       }
     }
     #ifdef TIMETAG
@@ -377,32 +378,39 @@ bool SerialTreeLearner::BeforeFindBestSplit(const Tree* tree, int left_leaf, int
     const data_size_t* indices = data_partition_->indices();
     const auto left_cnt = data_partition_->leaf_count(left_leaf);
     const auto right_cnt = data_partition_->leaf_count(right_leaf);
-    char mark = 1;
-    data_size_t begin = data_partition_->leaf_begin(left_leaf);
-    data_size_t end = begin + left_cnt;
-    data_size_t loop_size = end - begin;
-    if (left_cnt > right_cnt) {
-      begin = data_partition_->leaf_begin(right_leaf);
-      end = begin + right_cnt;
-      mark = 0;
+    const auto left_begin = data_partition_->leaf_begin(left_leaf);
+    const auto right_begin = data_partition_->leaf_begin(right_leaf);
+    data_size_t li = 0, ri = 0;
+    while (li < left_cnt && ri < right_cnt) {
+      if (indices[left_begin + li] < indices[right_begin + ri]) {
+        indices_mapper_for_ordered_bin_[li + ri] = li;
+        ++li;
+      } else {
+        indices_mapper_for_ordered_bin_[li + ri] = ~ri;
+        ++ri;
+      }
     }
-    #pragma omp parallel for schedule(static, 512) if(loop_size >= 1024)
-    for (data_size_t i = begin; i < end; ++i) {
-      is_data_in_leaf_[indices[i]] = 1;
+    while (li < left_cnt) {
+      indices_mapper_for_ordered_bin_[li + ri] = li;
+      ++li;
     }
+    while (ri < right_cnt) {
+      indices_mapper_for_ordered_bin_[li + ri] = ~ri;
+      ++ri;
+    }
+    #ifdef TIMETAG
+    ordered_bin_init_time += std::chrono::steady_clock::now() - start_time;
+    start_time = std::chrono::steady_clock::now();
+    #endif
     OMP_INIT_EX();
     // split the ordered bin
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(ordered_bin_indices_.size()); ++i) {
       OMP_LOOP_EX_BEGIN();
-      ordered_bins_[ordered_bin_indices_[i]]->Split(left_leaf, right_leaf, is_data_in_leaf_.data(), mark);
+      ordered_bins_[ordered_bin_indices_[i]]->Split(left_leaf, right_leaf, indices_mapper_for_ordered_bin_.data());
       OMP_LOOP_EX_END();
     }
     OMP_THROW_EX();
-    #pragma omp parallel for schedule(static, 512) if(loop_size >= 1024)
-    for (data_size_t i = begin; i < end; ++i) {
-      is_data_in_leaf_[indices[i]] = 0;
-    }
     #ifdef TIMETAG
     ordered_bin_time += std::chrono::steady_clock::now() - start_time;
     #endif

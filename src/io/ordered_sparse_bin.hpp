@@ -25,12 +25,6 @@ namespace LightGBM {
 template <typename VAL_T>
 class OrderedSparseBin: public OrderedBin {
 public:
-  /*! \brief Pair to store one bin entry */
-  struct SparsePair {
-    data_size_t ridx;  // data(row) index
-    VAL_T bin;  // bin for this data
-    SparsePair() : ridx(0), bin(0) {}
-  };
 
   OrderedSparseBin(const SparseBin<VAL_T>* bin_data)
     :bin_data_(bin_data) {
@@ -40,25 +34,26 @@ public:
     while (bin_data_->NextNonzero(&i_delta, &cur_pos)) {
       ++non_zero_cnt;
     }
-    ordered_pair_.resize(non_zero_cnt);
+    ordered_bin_.resize(non_zero_cnt);
+    ordered_indices_.resize(non_zero_cnt);
     leaf_cnt_.push_back(non_zero_cnt);
   }
 
   ~OrderedSparseBin() {
   }
 
-  void Init(const char* used_idices, int num_leaves) override {
+  void Init(const char* is_index_used, int num_leaves) override {
     // initialize the leaf information
-    leaf_start_ = std::vector<data_size_t>(num_leaves, 0);
-    leaf_cnt_ = std::vector<data_size_t>(num_leaves, 0);
-    if (used_idices == nullptr) {
+    leaf_start_.resize(num_leaves, 0);
+    leaf_cnt_.resize(num_leaves, 0);
+    if (is_index_used == nullptr) {
       // if using all data, copy all non-zero pair
       data_size_t j = 0;
       data_size_t cur_pos = 0;
       data_size_t i_delta = -1;
       while (bin_data_->NextNonzero(&i_delta, &cur_pos)) {
-        ordered_pair_[j].ridx = cur_pos;
-        ordered_pair_[j].bin = bin_data_->vals_[i_delta];
+        ordered_indices_[j] = cur_pos;
+        ordered_bin_[j] = bin_data_->vals_[i_delta];
         ++j;
       }
       leaf_cnt_[0] = static_cast<data_size_t>(j);
@@ -68,9 +63,9 @@ public:
       data_size_t cur_pos = 0;
       data_size_t i_delta = -1;
       while (bin_data_->NextNonzero(&i_delta, &cur_pos)) {
-        if (used_idices[cur_pos]) {
-          ordered_pair_[j].ridx = cur_pos;
-          ordered_pair_[j].bin = bin_data_->vals_[i_delta];
+        if (is_index_used[cur_pos]) {
+          ordered_indices_[j] = cur_pos;
+          ordered_bin_[j] = bin_data_->vals_[i_delta];
           ++j;
         }
       }
@@ -78,39 +73,30 @@ public:
     }
   }
 
-  void ConstructHistogram(int leaf, const score_t* gradient, const score_t* hessian,
+  void ConstructHistogram(int leaf, const score_t* ordered_gradients, const score_t* ordered_hessians,
                           HistogramBinEntry* out) const override {
     // get current leaf boundary
     const data_size_t start = leaf_start_[leaf];
     const data_size_t end = start + leaf_cnt_[leaf];
-    const int rest = (end - start) % 4;
+    const int rest = leaf_cnt_[leaf] & 0x3;
     data_size_t i = start;
     // use data on current leaf to construct histogram
     for (; i < end - rest; i += 4) {
 
-      const VAL_T bin0 = ordered_pair_[i].bin;
-      const VAL_T bin1 = ordered_pair_[i + 1].bin;
-      const VAL_T bin2 = ordered_pair_[i + 2].bin;
-      const VAL_T bin3 = ordered_pair_[i + 3].bin;
+      const VAL_T bin0 = ordered_bin_[i];
+      const VAL_T bin1 = ordered_bin_[i + 1];
+      const VAL_T bin2 = ordered_bin_[i + 2];
+      const VAL_T bin3 = ordered_bin_[i + 3];
 
-      const auto g0 = gradient[ordered_pair_[i].ridx];
-      const auto h0 = hessian[ordered_pair_[i].ridx];
-      const auto g1 = gradient[ordered_pair_[i + 1].ridx];
-      const auto h1 = hessian[ordered_pair_[i + 1].ridx];
-      const auto g2 = gradient[ordered_pair_[i + 2].ridx];
-      const auto h2 = hessian[ordered_pair_[i + 2].ridx];
-      const auto g3 = gradient[ordered_pair_[i + 3].ridx];
-      const auto h3 = hessian[ordered_pair_[i + 3].ridx];
+      out[bin0].sum_gradients += ordered_gradients[ordered_indices_[i]];
+      out[bin1].sum_gradients += ordered_gradients[ordered_indices_[i + 1]];
+      out[bin2].sum_gradients += ordered_gradients[ordered_indices_[i + 2]];
+      out[bin3].sum_gradients += ordered_gradients[ordered_indices_[i + 3]];
 
-      out[bin0].sum_gradients += g0;
-      out[bin1].sum_gradients += g1;
-      out[bin2].sum_gradients += g2;
-      out[bin3].sum_gradients += g3;
-
-      out[bin0].sum_hessians += h0;
-      out[bin1].sum_hessians += h1;
-      out[bin2].sum_hessians += h2;
-      out[bin3].sum_hessians += h3;
+      out[bin0].sum_hessians += ordered_hessians[ordered_indices_[i]];
+      out[bin1].sum_hessians += ordered_hessians[ordered_indices_[i + 1]];
+      out[bin2].sum_hessians += ordered_hessians[ordered_indices_[i + 2]];
+      out[bin3].sum_hessians += ordered_hessians[ordered_indices_[i + 3]];
 
       ++out[bin0].cnt;
       ++out[bin1].cnt;
@@ -119,75 +105,78 @@ public:
     }
 
     for (; i < end; ++i) {
-
-      const VAL_T bin0 = ordered_pair_[i].bin;
-
-      const auto g0 = gradient[ordered_pair_[i].ridx];
-      const auto h0 = hessian[ordered_pair_[i].ridx];
-
-      out[bin0].sum_gradients += g0;
-      out[bin0].sum_hessians += h0;
+      const VAL_T bin0 = ordered_bin_[i];
+      out[bin0].sum_gradients += ordered_gradients[ordered_indices_[i]];
+      out[bin0].sum_hessians += ordered_hessians[ordered_indices_[i]];
       ++out[bin0].cnt;
     }
 
   }
 
-  void ConstructHistogram(int leaf, const score_t* gradient,
+  void ConstructHistogram(int leaf, const score_t* ordered_gradients,
                           HistogramBinEntry* out) const override {
     // get current leaf boundary
     const data_size_t start = leaf_start_[leaf];
     const data_size_t end = start + leaf_cnt_[leaf];
-    const int rest = (end - start) % 4;
+    const int rest = leaf_cnt_[leaf] & 0x3;
     data_size_t i = start;
     // use data on current leaf to construct histogram
     for (; i < end - rest; i += 4) {
 
-      const VAL_T bin0 = ordered_pair_[i].bin;
-      const VAL_T bin1 = ordered_pair_[i + 1].bin;
-      const VAL_T bin2 = ordered_pair_[i + 2].bin;
-      const VAL_T bin3 = ordered_pair_[i + 3].bin;
+      const VAL_T bin0 = ordered_bin_[i];
+      const VAL_T bin1 = ordered_bin_[i + 1];
+      const VAL_T bin2 = ordered_bin_[i + 2];
+      const VAL_T bin3 = ordered_bin_[i + 3];
 
-      const auto g0 = gradient[ordered_pair_[i].ridx];
-      const auto g1 = gradient[ordered_pair_[i + 1].ridx];
-      const auto g2 = gradient[ordered_pair_[i + 2].ridx];
-      const auto g3 = gradient[ordered_pair_[i + 3].ridx];
+      out[bin0].sum_gradients += ordered_gradients[ordered_indices_[i]];
+      out[bin1].sum_gradients += ordered_gradients[ordered_indices_[i + 1]];
+      out[bin2].sum_gradients += ordered_gradients[ordered_indices_[i + 2]];
+      out[bin3].sum_gradients += ordered_gradients[ordered_indices_[i + 3]];
 
-      out[bin0].sum_gradients += g0;
-      out[bin1].sum_gradients += g1;
-      out[bin2].sum_gradients += g2;
-      out[bin3].sum_gradients += g3;
 
       ++out[bin0].cnt;
       ++out[bin1].cnt;
       ++out[bin2].cnt;
       ++out[bin3].cnt;
     }
+
     for (; i < end; ++i) {
-      const VAL_T bin0 = ordered_pair_[i].bin;
-      const auto g0 = gradient[ordered_pair_[i].ridx];
-      out[bin0].sum_gradients += g0;
+      const VAL_T bin0 = ordered_bin_[i];
+      out[bin0].sum_gradients += ordered_gradients[ordered_indices_[i]];
       ++out[bin0].cnt;
     }
   }
 
-  void Split(int leaf, int right_leaf, const char* is_in_leaf, char mark) override {
+  void Split(int leaf, int right_leaf, const data_size_t* indices) override {
     // get current leaf boundary
     const data_size_t l_start = leaf_start_[leaf];
     const data_size_t l_end = l_start + leaf_cnt_[leaf];
     // new left leaf end after split
-    data_size_t new_left_end = l_start;
-
-    for (data_size_t i = l_start; i < l_end; ++i) {
-      if (is_in_leaf[ordered_pair_[i].ridx] == mark) {
-        std::swap(ordered_pair_[new_left_end], ordered_pair_[i]);
-        ++new_left_end;
+    data_size_t left = l_start;
+    data_size_t right = l_end - 1;
+    while (left <= right) {
+      while (left <= right && indices[ordered_indices_[left]] >= 0) {
+        ordered_indices_[left] = indices[ordered_indices_[left]];
+        ++left;
+      }
+      while (left <= right && indices[ordered_indices_[right]] < 0) {
+        ordered_indices_[right] = ~indices[ordered_indices_[right]];
+        --right;
+      }
+      if (left < right) {
+        std::swap(ordered_bin_[left], ordered_bin_[right]);
+        std::swap(ordered_indices_[left], ordered_indices_[right]);
+        ordered_indices_[left] = indices[ordered_indices_[left]];
+        ordered_indices_[right] = ~indices[ordered_indices_[right]];
+        ++left;
+        --right;
       }
     }
-
-    leaf_start_[right_leaf] = new_left_end;
-    leaf_cnt_[leaf] = new_left_end - l_start;
-    leaf_cnt_[right_leaf] = l_end - new_left_end;
+    leaf_start_[right_leaf] = left;
+    leaf_cnt_[leaf] = left - l_start;
+    leaf_cnt_[right_leaf] = l_end - left;
   }
+
   data_size_t NonZeroCount(int leaf) const override {
     return static_cast<data_size_t>(leaf_cnt_[leaf]);
   }
@@ -199,7 +188,8 @@ public:
 private:
   const SparseBin<VAL_T>* bin_data_;
   /*! \brief Store non-zero pair , group by leaf */
-  std::vector<SparsePair> ordered_pair_;
+  std::vector<VAL_T> ordered_bin_;
+  std::vector<data_size_t> ordered_indices_;
   /*! \brief leaf_start_[i] means data in i-th leaf start from */
   std::vector<data_size_t> leaf_start_;
   /*! \brief leaf_cnt_[i] means number of data in i-th leaf */

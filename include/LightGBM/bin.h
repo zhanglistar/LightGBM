@@ -225,7 +225,7 @@ public:
            (this logic was build for bagging logic)
   * \param num_leaves Number of leaves on this iteration
   */
-  virtual void Init(const char* used_indices, data_size_t num_leaves) = 0;
+  virtual void Init(const char* is_index_used, data_size_t num_leaves) = 0;
 
   /*!
   * \brief Construct histogram by using this bin
@@ -236,8 +236,8 @@ public:
   * \param hessians Hessians, Note:non-oredered by leaf
   * \param out Output Result
   */
-  virtual void ConstructHistogram(int leaf, const score_t* gradients,
-    const score_t* hessians, HistogramBinEntry* out) const = 0;
+  virtual void ConstructHistogram(int leaf, const score_t* ordered_gradients,
+    const score_t* ordered_hessians, HistogramBinEntry* out) const = 0;
 
   /*!
   * \brief Construct histogram by using this bin
@@ -247,16 +247,15 @@ public:
   * \param gradients Gradients, Note:non-oredered by leaf
   * \param out Output Result
   */
-  virtual void ConstructHistogram(int leaf, const score_t* gradients, HistogramBinEntry* out) const = 0;
+  virtual void ConstructHistogram(int leaf, const score_t* ordered_gradients, HistogramBinEntry* out) const = 0;
 
   /*!
   * \brief Split current bin, and perform re-order by leaf
   * \param leaf Using which leaf's to split
   * \param right_leaf The new leaf index after perform this split
-  * \param is_in_leaf is_in_leaf[i] == mark means the i-th data will be on left leaf after split
-  * \param mark is_in_leaf[i] == mark means the i-th data will be on left leaf after split
+  * \param indices 
   */
-  virtual void Split(int leaf, int right_leaf, const char* is_in_leaf, char mark) = 0;
+  virtual void Split(int leaf, int right_leaf, const data_size_t* indices) = 0;
 
   virtual data_size_t NonZeroCount(int leaf) const = 0;
 };

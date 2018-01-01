@@ -99,9 +99,9 @@ public:
       hessians[i] = 0.0f;
     }
     // get sorted indices for scores
-    std::vector<data_size_t> sorted_idx;
+    std::vector<data_size_t> sorted_idx(cnt);
     for (data_size_t i = 0; i < cnt; ++i) {
-      sorted_idx.emplace_back(i);
+      sorted_idx[i] = i;
     }
     std::sort(sorted_idx.begin(), sorted_idx.end(),
              [score](data_size_t a, data_size_t b) { return score[a] > score[b]; });

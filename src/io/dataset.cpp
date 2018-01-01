@@ -661,8 +661,8 @@ void Dataset::ConstructHistograms(const std::vector<int8_t>& is_feature_used,
         } else {
           // used ordered bin
           ordered_bins[group]->ConstructHistogram(leaf_idx,
-                                                  gradients,
-                                                  hessians,
+                                                  ptr_ordered_grad,
+                                                  ptr_ordered_hess,
                                                   data_ptr);
         }
         OMP_LOOP_EX_END();
@@ -689,7 +689,7 @@ void Dataset::ConstructHistograms(const std::vector<int8_t>& is_feature_used,
         } else {
           // used ordered bin
           ordered_bins[group]->ConstructHistogram(leaf_idx,
-                                                  gradients,
+                                                  ptr_ordered_grad,
                                                   data_ptr);
         }
         // fixed hessian.
@@ -722,8 +722,8 @@ void Dataset::ConstructHistograms(const std::vector<int8_t>& is_feature_used,
         } else {
           // used ordered bin
           ordered_bins[group]->ConstructHistogram(leaf_idx,
-                                                  gradients,
-                                                  hessians,
+                                                  ptr_ordered_grad,
+                                                  ptr_ordered_hess,
                                                   data_ptr);
         }
         OMP_LOOP_EX_END();
@@ -749,7 +749,7 @@ void Dataset::ConstructHistograms(const std::vector<int8_t>& is_feature_used,
         } else {
           // used ordered bin
           ordered_bins[group]->ConstructHistogram(leaf_idx,
-                                                  gradients,
+                                                  ptr_ordered_grad,
                                                   data_ptr);
         }
         // fixed hessian.

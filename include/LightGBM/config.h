@@ -110,10 +110,10 @@ public:
   bool is_pre_partition = false;
   bool is_enable_sparse = true;
   /*! \brief The threshold of zero elements precentage for treating a feature as a sparse feature.
-   *  Default is 0.8, where a feature is treated as a sparse feature when there are over 80% zeros.
+   *  Default is 0.7, where a feature is treated as a sparse feature when there are over 70% zeros.
    *  When setting to 1.0, all features are processed as dense features.
    */
-  double sparse_threshold = 0.8;
+  double sparse_threshold = 0.7;
   bool use_two_round_loading = false;
   bool is_save_binary_file = false;
   bool enable_load_from_binary_file = true;
