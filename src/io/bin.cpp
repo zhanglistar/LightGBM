@@ -5,6 +5,7 @@
 #include "dense_nbits_bin.hpp"
 #include "sparse_bin.hpp"
 #include "ordered_sparse_bin.hpp"
+#include "ordered_dense_bin.hpp"
 
 #include <cmath>
 #include <cstring>

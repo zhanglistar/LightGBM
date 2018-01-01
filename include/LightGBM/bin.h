@@ -255,7 +255,7 @@ public:
   * \param right_leaf The new leaf index after perform this split
   * \param indices 
   */
-  virtual void Split(int leaf, int right_leaf, const data_size_t* indices) = 0;
+  virtual void Split(int leaf, int right_leaf, const data_size_t* indices, data_size_t new_left_cnt) = 0;
 
   virtual data_size_t NonZeroCount(int leaf) const = 0;
 };

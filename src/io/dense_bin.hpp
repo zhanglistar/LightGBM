@@ -35,6 +35,9 @@ private:
   VAL_T default_bin_;
   uint8_t bias_;
 };
+
+template <typename VAL_T>
+class OrderedDenseBin;
 /*!
 * \brief Used to store bins for dense feature
 * Use template to reduce memory cost
@@ -43,6 +46,7 @@ template <typename VAL_T>
 class DenseBin: public Bin {
 public:
   friend DenseBinIterator<VAL_T>;
+  friend OrderedDenseBin<VAL_T>;
   DenseBin(data_size_t num_data)
     : num_data_(num_data), data_(num_data_, static_cast<VAL_T>(0)) {
   }
@@ -278,7 +282,7 @@ public:
   data_size_t num_data() const override { return num_data_; }
 
   /*! \brief not ordered bin for dense feature */
-  OrderedBin* CreateOrderedBin() const override { return nullptr; }
+  OrderedBin* CreateOrderedBin() const override;
 
   void FinishLoad() override {}
 

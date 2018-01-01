@@ -407,7 +407,7 @@ bool SerialTreeLearner::BeforeFindBestSplit(const Tree* tree, int left_leaf, int
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < static_cast<int>(ordered_bin_indices_.size()); ++i) {
       OMP_LOOP_EX_BEGIN();
-      ordered_bins_[ordered_bin_indices_[i]]->Split(left_leaf, right_leaf, indices_mapper_for_ordered_bin_.data());
+      ordered_bins_[ordered_bin_indices_[i]]->Split(left_leaf, right_leaf, indices_mapper_for_ordered_bin_.data(), left_cnt);
       OMP_LOOP_EX_END();
     }
     OMP_THROW_EX();

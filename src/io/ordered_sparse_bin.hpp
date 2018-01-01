@@ -147,7 +147,7 @@ public:
     }
   }
 
-  void Split(int leaf, int right_leaf, const data_size_t* indices) override {
+  void Split(int leaf, int right_leaf, const data_size_t* indices, data_size_t) override {
     // get current leaf boundary
     const data_size_t l_start = leaf_start_[leaf];
     const data_size_t l_end = l_start + leaf_cnt_[leaf];
