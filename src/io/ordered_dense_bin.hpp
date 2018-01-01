@@ -121,6 +121,7 @@ public:
     const data_size_t l_start = leaf_start_[leaf];
     const data_size_t l_end = l_start + leaf_cnt_[leaf];
     const data_size_t r_cnt = leaf_cnt_[leaf] - new_left_cnt;
+    // To-do: inplace partition
     std::vector<VAL_T> tmp(r_cnt);
     // new left leaf end after split
     data_size_t new_left_end = l_start;

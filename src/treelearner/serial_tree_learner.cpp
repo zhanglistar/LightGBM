@@ -374,6 +374,7 @@ bool SerialTreeLearner::BeforeFindBestSplit(const Tree* tree, int left_leaf, int
     #ifdef TIMETAG
     auto start_time = std::chrono::steady_clock::now();
     #endif
+    // To-do: speed up following algorithm
     // mark data that at left-leaf
     const data_size_t* indices = data_partition_->indices();
     const auto left_cnt = data_partition_->leaf_count(left_leaf);

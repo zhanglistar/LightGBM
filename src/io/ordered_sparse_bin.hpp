@@ -154,6 +154,7 @@ public:
     // new left leaf end after split
     data_size_t left = l_start;
     data_size_t right = l_end - 1;
+    // To-do: try to partition to two sorted array
     while (left <= right) {
       while (left <= right && indices[ordered_indices_[left]] >= 0) {
         ordered_indices_[left] = indices[ordered_indices_[left]];
