@@ -272,6 +272,12 @@ public:
   int time_out = 120;  // in minutes
   std::string machine_list_filename = "";
   std::string machines = "";
+  std::string run_mode = "";
+  std::string application_master_address = "";
+  std::string local_ip_prefix = "";
+  std::string local_ip = "";
+    std::string name_node = "";
+    std::string username = "";
   LIGHTGBM_EXPORT void Set(const std::unordered_map<std::string, std::string>& params) override;
 };
 

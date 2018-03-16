@@ -40,11 +40,14 @@ public:
   * \brief Constructor
   * \param config Config of network settings
   */
-  explicit Linkers(NetworkConfig config);
+  explicit Linkers(NetworkConfig& config);
   /*!
   * \brief Destructor
   */
   ~Linkers();
+
+  bool find_available_port(NetworkConfig& config);
+
   /*!
   * \brief Recv data, blocking
   * \param rank Which rank will send data to local machine

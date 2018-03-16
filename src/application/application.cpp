@@ -24,6 +24,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "hdfs.h"
 
 namespace LightGBM {
 
@@ -164,11 +165,87 @@ void Application::LoadData() {
             std::chrono::duration<double, std::milli>(end_time - start_time) * 1e-3);
 }
 
+static int DownloadHdfsDir(hdfsFs fs, const char* dir, const char* local_fs, int total_rank = -1, int rank = -1) {
+  int num = 0;
+  hdfsFileInfo* pinfo = hdfsListDirectory(fs, config_.io_config.data_filename, &num);
+  Log::Info("total train data files num %d\n", num);
+  int start = 0;
+  int endx = num;
+  if (total_rank != -1 && rank != -1) {
+    int step = num / total_rank;
+    start = rank * step;
+    start = start > num ? num : start;
+    endx = (rank + 1) * step;
+    endx = endx > num ? num : endx;
+  }
+  FILE* fp = fopen(local_fs, "w");
+  CHECK(fp != nullptr);
+  int offset = 0;
+  for (int i = start; i < endx; ++i) {
+    if (pinfo[idx].mSize == 0) continue;
+    offset = 0;
+    Log::Info("Begin to download name %s, size: %d\n", pinfo[i].mName, pinfo[i].mSize);
+    hdfsFile hdfs_file = hdfsOpenFile(fs, pinfo[i].mName, O_RDONLY, 0, 0, 0);
+    CHECK(hdfs_file);
+    while (true)  {
+      char buffer[1024*1024];
+      tSize r_size = hdfsPread(fs, hdfs_file, offset, buffer, sizeof(buffer));
+      if (r_size == 0) {
+        break;
+      } else if (r_size == -1) {
+        hdfsCloseFile(fs, hdfs_file);
+        fclose(fp);
+        return r_size;
+      }
+      offset += r_size;
+      size_t write_size = fwrite(buffer, 1, r_size, fp);
+      if (write_size != r_size) {
+        hdfsCloseFile(fs, hdfs_file);
+        fclose(fp);
+        return false;
+      }
+    }
+    Log::Info("Finish downloading %s, size: %d\n", pinfo[i].mName, offset);
+    hdfsCloseFile(fs, hdfs_file);
+  }
+  fclose(fp);
+  return 0;
+}
+
+bool Application::DownloadData() {
+  auto str_after_split = Common::Split(config_.network_config.machines.c_str(), ',');
+  for (int i = 0; i < str_after_split.size(); ++i) {
+    if (str_after_split[i].find(config_.network_config.local_ip) != std::string::npos) {
+      auto str_slit_res = Common::Split(config_.network_config.name_node.c_str(), ':');
+      CHECK(str_slit_res.size() == 2);
+      hdfsFS fs = hdfsConnectAsUser(str_slit_res[0].c_str(), atoi(str_after_split[1].c_str()),
+                                    config_.network_config.username);
+      CHECK(fs != NULL);
+      const char* local_train_file = "train.local.tmp";
+      const char* local_valid_file = "valid.local.tmp";
+      int ret = DownloadHdfsDir(fs, config_.io_config.data_filename.c_str(), local_train_file, str_after_split.size(), i);
+      CHECK(ret == 0);
+      ret = DownloadHdfsDir(fs, config_.io_config.valid_data_filenames[0].c_str(), local_valid_file);
+      CHECK(ret == 0);
+      config_.io_config.data_filename = local_train_file;
+      config_.io_config.valid_data_filenames[0] = local_valid_file;
+      hdfsDisconnect(fs);
+      return true;
+    }
+  }
+  return false;
+}
+
 void Application::InitTrain() {
   if (config_.is_parallel) {
     // need init network
     Network::Init(config_.network_config);
+
     Log::Info("Finished initializing network");
+
+    if (!DownloadData()) {
+      Log::Fatal("Fail to download data ");
+    }
     config_.boosting_config.tree_config.feature_fraction_seed =
       Network::GlobalSyncUpByMin(config_.boosting_config.tree_config.feature_fraction_seed);
     config_.boosting_config.tree_config.feature_fraction =

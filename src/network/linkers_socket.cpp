@@ -17,7 +17,67 @@
 
 namespace LightGBM {
 
-Linkers::Linkers(NetworkConfig config) {
+bool Linkers::find_available_port(NetworkConfig& config) {
+  while (true) {
+    try {
+      TryBind(local_listen_port_);
+      Log::Info("listening on port %d ...", local_listen_port_);
+      config.local_listen_port = local_listen_port_;
+
+      if (config.run_mode == "yarn") {
+        Log::Info("Running on yarn");
+        TcpSocket cur_socket;
+        for (int i = 0; i < 6; ++i) {
+          std::vector<std::string> str_after_split =
+                  Common::Split(config.application_master_address.c_str(), ':');
+          if (str_after_split.size() != 2) {
+            Log::Fatal("Invalid application_master_address %s",
+                       config.application_master_address.c_str());
+          }
+          std::string host = Common::Trim(str_after_split[0]);
+          int port = atoi(Common::Trim(str_after_split[1]).c_str());
+          Log::Info("Connecting to appmaster %s:%d", host.c_str(), port);
+
+          if (cur_socket.Connect(host.c_str(), port)) {
+            break;
+          } else {
+            Log::Fatal("Connecting to appmaster %s:%d", host.c_str(), port);
+          }
+        }
+        auto ip_list = TcpSocket::GetLocalIpList();
+        std::string local_ip;
+        for (auto ip: ip_list) {
+          if (ip.find(config.local_ip_prefix, 0) != std::string::npos) {
+            local_ip = ip;
+            break;
+          }
+        }
+        if (local_ip.empty()) {
+          Log::Fatal("No found proper ip, local_ip_prefix %s", config.local_ip_prefix);
+        }
+        local_ip += std::to_string(local_listen_port_);
+        // send local ip and port
+        cur_socket.Send(local_ip.c_str(), local_ip.length());
+        char buffer[10240] = {0};
+        cur_socket.Recv(buffer, sizeof(buffer));
+        // get all workers
+        config.machines.assign(buffer, strlen(buffer));
+        config.local_ip = local_ip;
+        Log::Info("Got machine list %s", buffer);
+        cur_socket.Close();
+      }
+
+      return true;
+    } catch (const std::runtime_error& error) {
+      ++local_listen_port_;
+      if (local_listen_port_ > 65534) {
+        return false;
+      }
+    }
+  }
+}
+
+Linkers::Linkers(NetworkConfig& config) {
   is_init_ = false;
   // start up socket
   TcpSocket::Startup();
@@ -26,6 +86,11 @@ Linkers::Linkers(NetworkConfig config) {
   local_listen_port_ = config.local_listen_port;
   socket_timeout_ = config.time_out;
   rank_ = -1;
+  // construct listener
+  listener_ = std::unique_ptr<TcpSocket>(new TcpSocket());
+  if (!find_available_port(config)) {
+    Log::Fatal("Find no available port, now quit.");
+  }
   // parse clients from file
   ParseMachineList(config.machines, config.machine_list_filename);
 
@@ -43,9 +108,6 @@ Linkers::Linkers(NetworkConfig config) {
   if (rank_ == -1) {
     Log::Fatal("Machine list file doesn't contain the local machine");
   }
-  // construct listener
-  listener_ = std::unique_ptr<TcpSocket>(new TcpSocket());
-  TryBind(local_listen_port_);
 
   for (int i = 0; i < num_machines_; ++i) {
     linkers_.push_back(nullptr);

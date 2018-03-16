@@ -34,6 +34,7 @@ public:
 
 private:
 
+  bool DownloadData();
   /*! \brief Load parameters from command line and config file*/
   void LoadParameters(int argc, char** argv);
 

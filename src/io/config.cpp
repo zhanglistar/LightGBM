@@ -476,6 +476,18 @@ void NetworkConfig::Set(const std::unordered_map<std::string, std::string>& para
   CHECK(time_out > 0);
   GetString(params, "machine_list_file", &machine_list_filename);
   GetString(params, "machines", &machines);
+  GetString(params, "run_mode", &run_mode);
+  GetString(params, "local_ip_prefix", &local_ip_prefix);
+  GetString(params, "name_node", &name_node);
+  GetString(params, "username", &username);
+  CHECK(run_mode == "" || run_mode == "yarn");
+  GetString(params, "application_master_address", &application_master_address);
+  if (run_mode == "yarn") {
+//    CHECK(application_master_address != "");
+    CHECK(local_ip_prefix != "");
+    CHECK(name_node!= "");
+    CHECK(username!= "");
+  }
 }
 
 }  // namespace LightGBM
